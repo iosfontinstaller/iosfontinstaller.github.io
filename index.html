@@ -61,23 +61,23 @@
     <key>PayloadContent</key>
     <array>
         <dict>
-            <key>PayloadContent</key>
-            <data>
-${base64Font}
-            </data>
-            <key>PayloadDescription</key>
-            <string>Adds a font</string>
-            <key>PayloadDisplayName</key>
-            <string>${file.name}</string>
-            <key>PayloadIdentifier</key>
-            <string>com.example.font.${payloadUUID}</string>
-            <key>PayloadType</key>
-            <string>com.apple.font.font</string>
-            <key>PayloadUUID</key>
-            <string>${payloadUUID}</string>
-            <key>PayloadVersion</key>
-            <integer>1</integer>
-        </dict>
+	      <key>Font</key>
+	      <data>${base64Font}</data>
+	      <key>Name</key>
+	      <string>${file.name}</string>
+      	<key>PayloadDescription</key>
+	      <string>Configures Font settings</string>
+	      <key>PayloadDisplayName</key>
+	      <string>Font Settings(${file.name})</string>
+	      <key>PayloadIdentifier</key>
+	      <string>com.apple.font.${payloadUUID}</string>
+	      <key>PayloadType</key>
+	      <string>com.apple.font</string>
+	      <key>PayloadUUID</key>
+	      <string>${payloadUUID}</string>
+	      <key>PayloadVersion</key>
+	      <integer>1</integer>
+      </dict>
     </array>
     <key>PayloadDescription</key>
     <string>Installs a font configuration</string>
