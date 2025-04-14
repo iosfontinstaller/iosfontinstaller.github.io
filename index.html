@@ -6,7 +6,7 @@
 </head>
 <body>
   <h1>Mobileconfig Font Installer Generator</h1>
-  <input type="file" id="fontFile" accept=".ttf,.otf,.ttc,.woff,.woff2">
+  <input type="file" id="fontFile">
   <button id="generateBtn" disabled>Generate mobileconfig</button>
   <script>
     function generateUUID() {
@@ -29,7 +29,21 @@
     }
 
     document.getElementById('fontFile').addEventListener('change', function() {
-      document.getElementById('generateBtn').disabled = this.files.length === 0;
+      if (this.files.length === 0) {
+          document.getElementById('generateBtn').disabled = true;
+          return;
+      }
+      const file = this.files[0];
+      const fileName = file.name;
+      const allowedExtensions = ['ttf', 'otf', 'ttc', 'woff', 'woff2'];
+      const fileExtension = fileName.split('.').pop().toLowerCase();
+      if (allowedExtensions.indexOf(fileExtension) === -1) {
+          alert("This file does not appear to be a font file. Supported formats are: ttf, otf, ttc, woff, woff2");
+          this.value = "";
+          document.getElementById('generateBtn').disabled = true;
+      } else {
+          document.getElementById('generateBtn').disabled = false;
+      }
     });
 
     document.getElementById('generateBtn').addEventListener('click', async function() {
