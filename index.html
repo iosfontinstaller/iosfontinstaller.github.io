@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mobileconfig Font Installer Generator</title>
+</head>
+<body>
+  <h1>Mobileconfig Font Installer Generator</h1>
+  <input type="file" id="fontFile" accept=".ttf,.otf,.ttc,.woff,.woff2">
+  <button id="generateBtn" disabled>Generate mobileconfig</button>
+  <script>
+    function generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+      });
+    }
+
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+              const base64 = reader.result.split(',')[1];
+              resolve(base64);
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+      });
+    }
+
+    document.getElementById('fontFile').addEventListener('change', function() {
+      document.getElementById('generateBtn').disabled = this.files.length === 0;
+    });
+
+    document.getElementById('generateBtn').addEventListener('click', async function() {
+      const fileInput = document.getElementById('fontFile');
+      if (!fileInput.files.length) return;
+      const file = fileInput.files[0];
+      try {
+        const base64Font = await readFileAsBase64(file);
+        const payloadUUID = generateUUID();
+        const configUUID = generateUUID();
+        const mobileconfig = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Inc//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadContent</key>
+            <data>
+${base64Font}
+            </data>
+            <key>PayloadDescription</key>
+            <string>Adds a font</string>
+            <key>PayloadDisplayName</key>
+            <string>${file.name}</string>
+            <key>PayloadIdentifier</key>
+            <string>com.example.font.${payloadUUID}</string>
+            <key>PayloadType</key>
+            <string>com.apple.font.font</string>
+            <key>PayloadUUID</key>
+            <string>${payloadUUID}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>Installs a font configuration</string>
+    <key>PayloadDisplayName</key>
+    <string>Font Installation</string>
+    <key>PayloadIdentifier</key>
+    <string>com.example.fontprofile.${configUUID}</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>${configUUID}</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>`;
+        const blob = new Blob([mobileconfig], {type: 'application/x-apple-aspen-config'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name.split('.')[0] + '.mobileconfig';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        alert('Error: ' + error);
+      }
+    });
+  </script>
+</body>
+</html>
