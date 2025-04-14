@@ -6,9 +6,10 @@
 </head>
 <body>
   <h1>Mobileconfig Font Installer Generator</h1>
-  <input type="file" id="fontFile">
+  <input type="file" id="fontFile" multiple>
   <button id="generateBtn" disabled>Generate mobileconfig</button>
   <script>
+    // UUID生成関数
     function generateUUID() {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
           var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -16,10 +17,12 @@
       });
     }
 
+    // FileReaderを利用してファイルをBase64文字列に変換する
     function readFileAsBase64(file) {
       return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
+              // data:～,部分を除去してBase64データだけ取り出す
               const base64 = reader.result.split(',')[1];
               resolve(base64);
           };
@@ -27,57 +30,139 @@
           reader.readAsDataURL(file);
       });
     }
-
+    
+    // FileReaderを利用してファイルをArrayBufferに変換する
+    function readFileAsArrayBuffer(file) {
+      return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsArrayBuffer(file);
+      });
+    }
+    
+    // ArrayBufferをBase64文字列に変換する関数
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      const len = bytes.byteLength;
+      for (let i = 0; i < len; i++) {
+         binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+    
+    // TTC/OTC/DFontファイルを解析して中の各フォントを抽出する関数
+    async function parseFontCollection(file) {
+      const buffer = await readFileAsArrayBuffer(file);
+      const dv = new DataView(buffer);
+      // ヘッダチェック: TTC/OTCは先頭4バイトが "ttcf" である
+      let magic = "";
+      for (let i = 0; i < 4; i++){
+          magic += String.fromCharCode(dv.getUint8(i));
+      }
+      if(magic !== "ttcf") {
+          throw new Error("有効なコレクション形式ではありません");
+      }
+      // フォント数を取得 (ビッグエンディアン)
+      const numFonts = dv.getUint32(8, false);
+      const offsets = [];
+      for (let i = 0; i < numFonts; i++){
+          offsets.push(dv.getUint32(12 + i * 4, false));
+      }
+      const fonts = [];
+      for (let i = 0; i < numFonts; i++){
+          const start = offsets[i];
+          const end = (i < numFonts - 1) ? offsets[i + 1] : buffer.byteLength;
+          const fontBuffer = buffer.slice(start, end);
+          const base64Data = arrayBufferToBase64(fontBuffer);
+          // ファイル名の拡張子除去してインデックスを付与する
+          const baseName = file.name.replace(/\.[^/.]+$/, "");
+          fonts.push({ data: base64Data, name: baseName + " (Font " + (i + 1) + ")" });
+      }
+      return fonts;
+    }
+    
+    // 入力ファイル変更時の処理：複数ファイルの拡張子チェック
     document.getElementById('fontFile').addEventListener('change', function() {
-      if (this.files.length === 0) {
-          document.getElementById('generateBtn').disabled = true;
-          return;
+      const allowedExtensions = ['ttf', 'otf', 'ttc', 'otc', 'dfont', 'woff', 'woff2'];
+      for (let i = 0; i < this.files.length; i++){
+          let fileExt = this.files[i].name.split('.').pop().toLowerCase();
+          if (allowedExtensions.indexOf(fileExt) === -1) {
+              alert("選択されたファイルの中に対応していない拡張子が含まれています。\n対応形式: ttf, otf, ttc, otc, dfont, woff, woff2");
+              this.value = "";
+              document.getElementById('generateBtn').disabled = true;
+              return;
+          }
       }
-      const file = this.files[0];
-      const fileName = file.name;
-      const allowedExtensions = ['ttf', 'otf', 'ttc', 'woff', 'woff2'];
-      const fileExtension = fileName.split('.').pop().toLowerCase();
-      if (allowedExtensions.indexOf(fileExtension) === -1) {
-          alert("This file does not appear to be a font file. Supported formats are: ttf, otf, ttc, woff, woff2");
-          this.value = "";
-          document.getElementById('generateBtn').disabled = true;
-      } else {
-          document.getElementById('generateBtn').disabled = false;
-      }
+      document.getElementById('generateBtn').disabled = (this.files.length === 0);
     });
-
+    
+    // mobileconfig作成ボタン押下時の処理
     document.getElementById('generateBtn').addEventListener('click', async function() {
       const fileInput = document.getElementById('fontFile');
       if (!fileInput.files.length) return;
-      const file = fileInput.files[0];
-      try {
-        const base64Font = await readFileAsBase64(file);
-        const payloadUUID = generateUUID();
-        const configUUID = generateUUID();
-        const mobileconfig = `<?xml version="1.0" encoding="UTF-8"?>
+      const fontPayloads = [];
+      // 全ファイルを処理
+      for (let i = 0; i < fileInput.files.length; i++){
+          const file = fileInput.files[i];
+          const ext = file.name.split('.').pop().toLowerCase();
+          try {
+            if (['ttc', 'otc', 'dfont'].includes(ext)) {
+                // フォントコレクションの場合、内部の各フォントを抽出
+                const fonts = await parseFontCollection(file);
+                fonts.forEach(font => {
+                    fontPayloads.push({ base64: font.data, name: font.name });
+                });
+            } else {
+                // 単体フォント (ttf, otf, woff, woff2) の場合
+                const base64 = await readFileAsBase64(file);
+                fontPayloads.push({ base64: base64, name: file.name });
+            }
+          } catch (err) {
+            alert("ファイル " + file.name + " の処理中にエラーが発生しました: " + err);
+            continue;
+          }
+      }
+      if (fontPayloads.length === 0) {
+          alert("有効なフォントがありません");
+          return;
+      }
+      
+      // 各フォントごとのPayloadディクショナリを生成
+      let payloadsStr = "";
+      fontPayloads.forEach(font => {
+          const payloadUUID = generateUUID();
+          payloadsStr += `
+        <dict>
+          <key>Font</key>
+          <data>${font.base64}</data>
+          <key>Name</key>
+          <string>${font.name}</string>
+          <key>PayloadDescription</key>
+          <string>Configures Font settings</string>
+          <key>PayloadDisplayName</key>
+          <string>Font Settings(${font.name})</string>
+          <key>PayloadIdentifier</key>
+          <string>com.apple.font.${payloadUUID}</string>
+          <key>PayloadType</key>
+          <string>com.apple.font</string>
+          <key>PayloadUUID</key>
+          <string>${payloadUUID}</string>
+          <key>PayloadVersion</key>
+          <integer>1</integer>
+        </dict>`;
+      });
+      
+      const configUUID = generateUUID();
+      // mobileconfig全体のXMLを生成
+      const mobileconfig = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Inc//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>PayloadContent</key>
     <array>
-        <dict>
-	      <key>Font</key>
-	      <data>${base64Font}</data>
-	      <key>Name</key>
-	      <string>${file.name}</string>
-      	<key>PayloadDescription</key>
-	      <string>Configures Font settings</string>
-	      <key>PayloadDisplayName</key>
-	      <string>Font Settings(${file.name})</string>
-	      <key>PayloadIdentifier</key>
-	      <string>com.apple.font.${payloadUUID}</string>
-	      <key>PayloadType</key>
-	      <string>com.apple.font</string>
-	      <key>PayloadUUID</key>
-	      <string>${payloadUUID}</string>
-	      <key>PayloadVersion</key>
-	      <integer>1</integer>
-      </dict>
+      ${payloadsStr}
     </array>
     <key>PayloadDescription</key>
     <string>Installs a font configuration</string>
@@ -95,18 +180,17 @@
     <integer>1</integer>
 </dict>
 </plist>`;
-        const blob = new Blob([mobileconfig], {type: 'application/x-apple-aspen-config'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name.split('.')[0] + '.mobileconfig';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } catch (error) {
-        alert('Error: ' + error);
-      }
+      
+      // mobileconfigファイルとしてダウンロード
+      const blob = new Blob([mobileconfig], { type: 'application/x-apple-aspen-config' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "FontInstallation.mobileconfig";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     });
   </script>
 </body>
